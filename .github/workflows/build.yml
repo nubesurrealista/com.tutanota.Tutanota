@@ -24,8 +24,8 @@ jobs:
           wget -q $APPIMAGE_URL -O tutanota.AppImage
           chmod +x tutanota.AppImage
           ./tutanota.AppImage --appimage-extract > /dev/null
-          mv squashfs-root tutanota-desktop
-          tar -czf tutanota-unpacked-linux.tar.gz tutanota-desktop/
+          mv squashfs-root linux-unpacked
+          tar -czf tutanota-unpacked-linux.tar.gz linux-unpacked/
           echo "NEW_SHA=$(sha256sum tutanota-unpacked-linux.tar.gz | cut -d' ' -f1)" >> $GITHUB_ENV
 
       - name: Patch Manifest
