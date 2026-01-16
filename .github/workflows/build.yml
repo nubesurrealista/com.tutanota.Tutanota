@@ -1,4 +1,4 @@
-name: Build Tuta Official Patched
+name: Build Tuta
 
 on:
   workflow_dispatch:
@@ -15,33 +15,38 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder jq
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-      - name: Clone Official Repo
-        run: git clone --depth 1 https://github.com/flathub/com.tutanota.Tutanota.git official-repo
-
       - name: Prepare Local Source
         run: |
-          APPIMAGE_URL=$(curl -s https://api.github.com/repos/tutao/tutanota/releases | jq -r 'map(select(.tag_name | contains("tutanota-desktop-release"))) | first | .assets[] | select(.name | endswith(".AppImage")) | .browser_download_url')
+          RELEASE_DATA=$(curl -s https://api.github.com/repos/tutao/tutanota/releases | jq -r 'map(select(.tag_name | contains("tutanota-desktop-release"))) | first')
+          APPIMAGE_URL=$(echo "$RELEASE_DATA" | jq -r '.assets[] | select(.name | endswith(".AppImage")) | .browser_download_url')
+          VERSION=$(echo "$RELEASE_DATA" | jq -r '.tag_name' | sed 's/tutanota-desktop-release-//')
+          DATE=$(echo "$RELEASE_DATA" | jq -r '.published_at' | cut -d'T' -f1)
           wget -q $APPIMAGE_URL -O tutanota.AppImage
           chmod +x tutanota.AppImage
           ./tutanota.AppImage --appimage-extract > /dev/null
           mv squashfs-root linux-unpacked
           tar -czf tutanota-unpacked-linux.tar.gz linux-unpacked/
           echo "NEW_SHA=$(sha256sum tutanota-unpacked-linux.tar.gz | cut -d' ' -f1)" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "DATE=$DATE" >> $GITHUB_ENV
 
-      - name: Patch Manifest
+      - name: Patch Manifest and Metadata
         run: |
           jq --arg sha "$NEW_SHA" --arg path "file://$(pwd)/tutanota-unpacked-linux.tar.gz" \
           '(.modules[] | select(.name=="tutanota") | .sources[] | select(.type=="file" and ."dest-filename"=="tutanota-unpacked-linux.tar.gz")) |= (.url = $path | .sha256 = $sha)' \
-          official-repo/com.tutanota.Tutanota.json > patched.json
-          mv patched.json official-repo/com.tutanota.Tutanota.json
+          com.tutanota.Tutanota.json > patched.json
+          mv patched.json com.tutanota.Tutanota.json
+          sed -i 's/Tuta (Experimental)/Tuta/g' com.tutanota.Tutanota.appdata.xml
+          NEW_RELEASE_BLOCK="    <release version=\"$VERSION\" date=\"$DATE\">\n      <description>\n        <p>\n          Check out the release notes on GitHub:\n          https://github.com/tutao/tutanota/releases/tag/tutanota-desktop-release-$VERSION\n        </p>\n      </description>\n    </release>"
+          sed -i "/<releases>/a $NEW_RELEASE_BLOCK" com.tutanota.Tutanota.appdata.xml
 
       - name: Build Flatpak
         run: |
-          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean --repo=repo build_dir official-repo/com.tutanota.Tutanota.json
-          flatpak build-bundle repo Tuta-Custom.flatpak com.tutanota.Tutanota
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --force-clean --repo=repo build_dir com.tutanota.Tutanota.json
+          flatpak build-bundle repo com.tutanota.Tutanota.flatpak com.tutanota.Tutanota
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Tuta-Flatpak-Bundle
-          path: Tuta-Custom.flatpak
+          name: tuta-flatpak
+          path: com.tutanota.Tutanota.flatpak
